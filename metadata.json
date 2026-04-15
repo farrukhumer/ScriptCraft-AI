@@ -1,0 +1,11 @@
+{
+  "name": "ScriptCraft AI - Reddit Story Generator",
+  "description": "Premium tool to transform Reddit stories and comments into high-quality, hook-driven scripts with chapter-wise twists and bilingual support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "AI Story Generation",
+    "Reddit Data Fetching",
+    "Bilingual Support (English/Urdu)",
+    "Script Editing & Export"
+  ]
+}
