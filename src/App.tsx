@@ -53,6 +53,14 @@ export default function App() {
   const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("input");
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Image Prompt Generator State
   const [promptInput, setPromptInput] = useState("");
@@ -310,11 +318,11 @@ Twist: ${c.twist}
         1. "mainCharacterDescription": Create a CONCISE physical description of the main character (e.g., 'Mark, 35yo man in glasses and gray blazer').
         2. "thumbnailPrompt": As a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama, read the provided story and generate a single, high-impact Image Generation Prompt.
            - Read & Analyze: Scan the story for the most 'Shocking' and 'Dramatic' point (e.g. HOA Confrontation, Property Destruction, or Illegal Act).
-           - Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+           - Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story. CRITICAL: Expressions must be REALISTIC HUMAN expressions. AVOID any unnatural distortions, pure white eyes, or horror-like facial features. Characters should look like real people in a high-stakes drama, not supernatural entities.
            - Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
            - Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
            - Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
-           - Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+           - Lighting: STRICTLY DAYTIME. Use "Bright, even midday sunlight" or "High-intensity diffused daylight". AVOID deep, harsh shadows or dark silhouettes on the ground or faces. The lighting should be clear and even across the whole scene.
            - Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
            - Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
            - CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
@@ -423,11 +431,11 @@ Twist: ${c.twist}
         
         Instructions:
         1. Read & Analyze: Scan the text for the most 'Shocking' and 'Dramatic' point (e.g. HOA Confrontation, Property Destruction, or Illegal Act).
-        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story. CRITICAL: Expressions must be REALISTIC HUMAN expressions. AVOID any unnatural distortions, pure white eyes, or horror-like facial features. Characters should look like real people in a high-stakes drama, not supernatural entities.
         3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
         4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
         5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
-        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        6. Lighting: STRICTLY DAYTIME. Use "Bright, even midday sunlight" or "High-intensity diffused daylight". AVOID deep, harsh shadows or dark silhouettes on the ground or faces. The lighting should be clear and even across the whole scene.
         7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
         8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
         9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
@@ -469,11 +477,11 @@ Twist: ${c.twist}
         
         Instructions:
         1. Read & Analyze: Scan the original idea for the most 'Shocking' and 'Dramatic' point.
-        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story. CRITICAL: Expressions must be REALISTIC HUMAN expressions. AVOID any unnatural distortions, pure white eyes, or horror-like facial features. Characters should look like real people in a high-stakes drama, not supernatural entities.
         3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
         4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
         5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
-        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        6. Lighting: STRICTLY DAYTIME. Use "Bright, even midday sunlight" or "High-intensity diffused daylight". AVOID deep, harsh shadows or dark silhouettes on the ground or faces. The lighting should be clear and even across the whole scene.
         7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
         8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
         9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
@@ -516,11 +524,11 @@ Twist: ${c.twist}
         
         Instructions:
         1. Read & Analyze: Scan the story for a DIFFERENT 'Shocking' and 'Dramatic' point than the previous one.
-        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story. CRITICAL: Expressions must be REALISTIC HUMAN expressions. AVOID any unnatural distortions, pure white eyes, or horror-like facial features. Characters should look like real people in a high-stakes drama, not supernatural entities.
         3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
         4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
         5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
-        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        6. Lighting: STRICTLY DAYTIME. Use "Bright, even midday sunlight" or "High-intensity diffused daylight". AVOID deep, harsh shadows or dark silhouettes on the ground or faces. The lighting should be clear and even across the whole scene.
         7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
         8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
         9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
@@ -549,6 +557,43 @@ Twist: ${c.twist}
 
   return (
     <div className="min-h-screen font-sans bg-white text-black selection:bg-indigo-100">
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center text-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="space-y-6"
+            >
+              <div className="w-24 h-24 mx-auto rounded-3xl premium-gradient flex items-center justify-center shadow-2xl shadow-indigo-500/20 mb-8">
+                <Zap className="text-white w-12 h-12 fill-white" />
+              </div>
+              <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter">
+                Welcome To The <span className="text-indigo-500">Premium Story Engine</span>
+              </h1>
+              <div className="space-y-2">
+                <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
+                  Powered by Mr-Furrukh
+                </p>
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: 3, delay: 1 }}
+                  className="h-1 bg-indigo-600 mx-auto rounded-full"
+                  style={{ maxWidth: "200px" }}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Background Decor */}
       <div className="fixed inset-0 -z-10 overflow-hidden opacity-30">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-200 blur-[120px]" />
@@ -595,8 +640,8 @@ Twist: ${c.twist}
             <Zap className="text-white w-6 h-6 fill-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-black">ScriptCraft AI</h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Premium Story Engine</p>
+            <h1 className="text-xl font-bold tracking-tight text-black">Premium Story Engine</h1>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black">Free For Life Time use</p>
           </div>
         </div>
 
@@ -1297,10 +1342,10 @@ Twist: ${c.twist}
       <footer className="max-w-7xl mx-auto p-12 mt-12 border-t border-slate-100 text-center">
         <div className="flex items-center justify-center gap-2 mb-4">
           <Zap className="w-4 h-4 text-indigo-600" />
-          <span className="text-sm font-black text-black uppercase tracking-widest">ScriptCraft AI</span>
+          <span className="text-sm font-black text-black uppercase tracking-widest">Premium Story Engine</span>
         </div>
         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">
-          Premium Content Engine • Powered by Gemini Pro • © 2026
+          Powered by Mr-Furrukh • © 2026
         </p>
       </footer>
     </div>
