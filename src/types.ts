@@ -32,5 +32,13 @@ export interface PromptGeneration {
   timestamp: string;
   storyTitle: string;
   mainCharacterDescription: string;
+  thumbnailPrompt?: string;
   prompts: ImagePrompt[];
+}
+
+export interface ThumbnailPrompt {
+  id: string;
+  timestamp: string;
+  input: string;
+  output: string;
 }

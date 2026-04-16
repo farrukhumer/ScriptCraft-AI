@@ -37,7 +37,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { RedditPost, GeneratedStory, StoryChapter, PromptGeneration, ImagePrompt } from "@/src/types";
+import { RedditPost, GeneratedStory, StoryChapter, PromptGeneration, ImagePrompt, ThumbnailPrompt } from "@/src/types";
 
 export default function App() {
   const [inputText, setInputText] = useState("");
@@ -59,6 +59,12 @@ export default function App() {
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [promptHistory, setPromptHistory] = useState<PromptGeneration[]>([]);
   const [currentPromptGeneration, setCurrentPromptGeneration] = useState<PromptGeneration | null>(null);
+
+  // Thumbnail Generator State
+  const [thumbnailInput, setThumbnailInput] = useState("");
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+  const [thumbnailHistory, setThumbnailHistory] = useState<ThumbnailPrompt[]>([]);
+  const [currentThumbnailPrompt, setCurrentThumbnailPrompt] = useState<ThumbnailPrompt | null>(null);
 
   // Fetch Reddit Posts
   const fetchReddit = async (subreddit: string = "HOA") => {
@@ -296,16 +302,26 @@ Twist: ${c.twist}
     
     try {
       const prompt = `
-        You are an expert AI image prompt engineer. Based on the story provided, generate a concise description of the main character and 50 scene-by-scene image prompts.
+        You are an expert AI image prompt engineer. Based on the story provided, generate a concise description of the main character, a viral thumbnail prompt, and 50 scene-by-scene image prompts.
         
         Story Content: "${text}"
         
         CRITICAL REQUIREMENTS:
         1. "mainCharacterDescription": Create a CONCISE physical description of the main character (e.g., 'Mark, 35yo man in glasses and gray blazer').
-        2. "prompts": Generate exactly 50 scene-by-scene prompts.
-        3. CHARACTER CONSISTENCY & PRESENCE: For every scene where the main character is present, start the prompt with the concise description created in step 1. 
+        2. "thumbnailPrompt": As a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama, read the provided story and generate a single, high-impact Image Generation Prompt.
+           - Read & Analyze: Scan the story for the most 'Shocking' and 'Dramatic' point (e.g. HOA Confrontation, Property Destruction, or Illegal Act).
+           - Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+           - Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
+           - Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
+           - Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
+           - Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+           - Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
+           - Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
+           - CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
+        3. "prompts": Generate exactly 50 scene-by-scene prompts.
+        4. CHARACTER CONSISTENCY & PRESENCE: For every scene where the main character is present, start the prompt with the concise description created in step 1. 
            CRITICAL RULE: If the character is NOT present in a specific scene, DO NOT include their name or physical description at all. Only describe the environment, the action, the camera angle, and the lighting.
-        4. CINEMATIC FOCUS: Focus 60% of each prompt on the cinematic camera angle (e.g., low angle, close-up, wide shot), detailed environment, lighting (e.g., moody, neon, harsh shadows), and the suspenseful/eerie mood of the scene.
+        5. CINEMATIC FOCUS: Focus 60% of each prompt on the cinematic camera angle (e.g., low angle, close-up, wide shot), detailed environment, lighting (e.g., moody, neon, harsh shadows), and the suspenseful/eerie mood of the scene.
         
         Output must be in JSON format.
       `;
@@ -319,6 +335,7 @@ Twist: ${c.twist}
             type: Type.OBJECT,
             properties: {
               mainCharacterDescription: { type: Type.STRING },
+              thumbnailPrompt: { type: Type.STRING },
               prompts: {
                 type: Type.ARRAY,
                 items: {
@@ -331,7 +348,7 @@ Twist: ${c.twist}
                 }
               }
             },
-            required: ["mainCharacterDescription", "prompts"]
+            required: ["mainCharacterDescription", "thumbnailPrompt", "prompts"]
           }
         }
       });
@@ -365,16 +382,167 @@ Twist: ${c.twist}
     reader.readAsText(file);
   };
 
+  const handleThumbnailFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setThumbnailInput(content);
+    };
+    reader.readAsText(file);
+  };
+
   const handleDownloadPrompts = () => {
     if (!currentPromptGeneration) return;
     
-    const text = currentPromptGeneration.prompts.map(p => p.description).join("\n\n");
+    let text = "";
+    if (currentPromptGeneration.thumbnailPrompt) {
+      text += `THUMBNAIL PROMPT:\n${currentPromptGeneration.thumbnailPrompt}\n\n---\n\n`;
+    }
+    text += currentPromptGeneration.prompts.map(p => p.description).join("\n\n");
+    
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `prompts-${Date.now()}.txt`;
     a.click();
+  };
+
+  const generateThumbnailPrompt = async (text: string) => {
+    if (!text) return;
+    setIsGeneratingThumbnail(true);
+    
+    try {
+      const prompt = `
+        Role: You are a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama.
+        
+        Task: Read the provided idea or story and generate a single, high-impact Image Generation Prompt. 
+        
+        Instructions:
+        1. Read & Analyze: Scan the text for the most 'Shocking' and 'Dramatic' point (e.g. HOA Confrontation, Property Destruction, or Illegal Act).
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
+        4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
+        5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
+        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
+        8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
+        9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
+
+        User Idea: "${text}"
+
+        Output Format:
+        Return ONLY the final, highly detailed image generation prompt. Do not add conversational text.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: STORY_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const output = response.text || "";
+      const newPrompt: ThumbnailPrompt = {
+        id: Date.now().toString(),
+        timestamp: new Date().toLocaleTimeString(),
+        input: text,
+        output: output.trim()
+      };
+
+      setCurrentThumbnailPrompt(newPrompt);
+      setThumbnailHistory(prev => [newPrompt, ...prev]);
+    } catch (error) {
+      console.error("Thumbnail prompt generation error:", error);
+    } finally {
+      setIsGeneratingThumbnail(false);
+    }
+  };
+
+  const rewriteThumbnailPrompt = async (currentPrompt: string, originalInput: string) => {
+    setIsGeneratingThumbnail(true);
+    try {
+      const prompt = `
+        Role: You are a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama.
+        The user didn't like the previous prompt. Please rewrite it to be even more high-impact and viral.
+        
+        Instructions:
+        1. Read & Analyze: Scan the original idea for the most 'Shocking' and 'Dramatic' point.
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
+        4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
+        5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
+        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
+        8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
+        9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
+        
+        Original Idea: "${originalInput}"
+        Previous Prompt: "${currentPrompt}"
+        
+        Return ONLY the new, improved, highly detailed image generation prompt.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: STORY_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const output = response.text || "";
+      const newPrompt: ThumbnailPrompt = {
+        id: Date.now().toString(),
+        timestamp: new Date().toLocaleTimeString(),
+        input: originalInput,
+        output: output.trim()
+      };
+
+      setCurrentThumbnailPrompt(newPrompt);
+      setThumbnailHistory(prev => [newPrompt, ...prev]);
+    } catch (error) {
+      console.error("Thumbnail rewrite error:", error);
+    } finally {
+      setIsGeneratingThumbnail(false);
+    }
+  };
+
+  const rewriteStoryThumbnail = async () => {
+    if (!currentPromptGeneration) return;
+    setIsGeneratingPrompts(true); // Re-use this state or similar
+    try {
+      const prompt = `
+        Role: You are a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama.
+        The user wants a DIFFERENT viral thumbnail prompt for this story. 
+        
+        Instructions:
+        1. Read & Analyze: Scan the story for a DIFFERENT 'Shocking' and 'Dramatic' point than the previous one.
+        2. Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story.
+        3. Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
+        4. Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
+        5. Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
+        6. Lighting: STRICTLY DAYTIME. Use "Flat, shadowless high-key lighting" or "Bright overcast daylight". ABSOLUTELY NO SHADOWS on the ground, faces, or environment. The entire scene must be perfectly lit with zero dark spots or silhouettes.
+        7. Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
+        8. Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
+        9. CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
+        
+        Story Content: "${currentPromptGeneration.storyTitle}"
+        Previous Thumbnail Prompt: "${currentPromptGeneration.thumbnailPrompt}"
+        
+        Return ONLY the new, highly detailed image generation prompt.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: STORY_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const output = (response.text || "").trim();
+      setCurrentPromptGeneration(prev => prev ? { ...prev, thumbnailPrompt: output } : null);
+    } catch (error) {
+      console.error("Story thumbnail rewrite error:", error);
+    } finally {
+      setIsGeneratingPrompts(false);
+    }
   };
 
   const currentDisplayStory = showUrdu ? urduStory : story;
@@ -407,7 +575,7 @@ Twist: ${c.twist}
               </div>
             </div>
             <h2 className="mt-8 text-2xl font-bold text-black tracking-tight">
-              {isGeneratingTitles ? "Crafting Viral Titles..." : isGeneratingStory ? "Generating Premium Script..." : "Engineering Image Prompts..."}
+              {isGeneratingTitles ? "Crafting Viral Titles..." : isGeneratingStory ? "Generating Premium Script..." : isGeneratingPrompts ? "Engineering Image Prompts..." : "Designing Viral Thumbnail..."}
             </h2>
             <p className="mt-2 text-slate-600 max-w-xs font-medium">
               Please wait while our AI engine builds your high-quality story structure.
@@ -453,18 +621,22 @@ Twist: ${c.twist}
         {/* Left Column: Input & Discovery */}
         <div className="lg:col-span-4 space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-slate-100 border border-slate-200 p-1 rounded-xl">
-              <TabsTrigger value="input" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-xs">
-                <Edit3 className="w-4 h-4 mr-1" />
+            <TabsList className="grid w-full grid-cols-4 bg-slate-100 border border-slate-200 p-1 rounded-xl">
+              <TabsTrigger value="input" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
+                <Edit3 className="w-3 h-3 mr-1" />
                 Input
               </TabsTrigger>
-              <TabsTrigger value="reddit" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-xs">
-                <Search className="w-4 h-4 mr-1" />
+              <TabsTrigger value="reddit" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
+                <Search className="w-3 h-3 mr-1" />
                 Reddit
               </TabsTrigger>
-              <TabsTrigger value="prompts" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-xs">
-                <ImageIcon className="w-4 h-4 mr-1" />
+              <TabsTrigger value="prompts" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
+                <ImageIcon className="w-3 h-3 mr-1" />
                 Prompts
+              </TabsTrigger>
+              <TabsTrigger value="thumbnails" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
+                <Sparkles className="w-3 h-3 mr-1" />
+                Thumbnails
               </TabsTrigger>
             </TabsList>
 
@@ -620,6 +792,80 @@ Twist: ${c.twist}
                                 )}
                               >
                                 <div className="truncate mb-1">{gen.storyTitle}</div>
+                                <div className="text-[9px] opacity-60">{gen.timestamp}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="thumbnails" className="mt-4">
+              <Card className="border-slate-200 shadow-sm overflow-hidden h-[calc(100vh-280px)] flex flex-col">
+                <CardHeader className="bg-slate-50/50 border-b border-slate-100 shrink-0">
+                  <CardTitle className="text-sm font-black flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    Thumbnail Prompt Engineer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 flex-1 flex flex-col overflow-hidden">
+                  <div className="flex-1 flex flex-col space-y-2 min-h-0">
+                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Scene Idea</label>
+                    <div className="flex-1 relative">
+                      <Textarea 
+                        placeholder="Describe your thumbnail idea (e.g., angry woman with trashcan)..."
+                        value={thumbnailInput}
+                        onChange={(e) => setThumbnailInput(e.target.value)}
+                        className="absolute inset-0 bg-slate-50 border-slate-200 focus:ring-indigo-500 rounded-xl font-medium overflow-y-auto resize-none p-3 pb-12"
+                      />
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        <label className="cursor-pointer p-2 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
+                          <Upload className="w-4 h-4 text-slate-600" />
+                          <input type="file" className="hidden" accept=".txt" onChange={handleThumbnailFileUpload} />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 space-y-4 shrink-0">
+                    <Button 
+                      className="w-full premium-gradient text-white font-black rounded-xl shadow-lg shadow-indigo-100 h-12"
+                      onClick={() => generateThumbnailPrompt(thumbnailInput)}
+                      disabled={!thumbnailInput || isGeneratingThumbnail}
+                    >
+                      {isGeneratingThumbnail ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-5 h-5 mr-2" />
+                          Generate Thumbnail Prompt
+                        </>
+                      )}
+                    </Button>
+
+                    {thumbnailHistory.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-400 font-black">
+                          <Clock className="w-3 h-3" />
+                          Recent Thumbnails
+                        </div>
+                        <ScrollArea className="h-[100px]">
+                          <div className="space-y-2">
+                            {thumbnailHistory.map((gen) => (
+                              <button
+                                key={gen.id}
+                                onClick={() => setCurrentThumbnailPrompt(gen)}
+                                className={cn(
+                                  "w-full text-left p-3 rounded-xl border transition-all text-xs font-bold",
+                                  currentThumbnailPrompt?.id === gen.id 
+                                    ? "bg-indigo-50 border-indigo-200 text-indigo-700" 
+                                    : "bg-slate-50 border-slate-100 text-slate-600 hover:border-slate-200"
+                                )}
+                              >
+                                <div className="truncate mb-1">{gen.input}</div>
                                 <div className="text-[9px] opacity-60">{gen.timestamp}</div>
                               </button>
                             ))}
@@ -864,6 +1110,47 @@ Twist: ${c.twist}
                   </Button>
                 </div>
 
+                {currentPromptGeneration.thumbnailPrompt && (
+                  <div className="p-8 rounded-3xl bg-indigo-900 text-white shadow-2xl relative overflow-hidden border border-indigo-500/30">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                      <Sparkles className="w-32 h-32" />
+                    </div>
+                    <h2 className="text-sm uppercase tracking-[0.3em] text-indigo-300 font-black mb-4">Viral Thumbnail Prompt</h2>
+                    <p className="text-xl font-bold leading-relaxed text-indigo-50">
+                      {currentPromptGeneration.thumbnailPrompt}
+                    </p>
+                    <div className="mt-6 flex gap-3">
+                      <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
+                        onClick={() => {
+                          navigator.clipboard.writeText(currentPromptGeneration.thumbnailPrompt!);
+                          setCopySuccess(true);
+                          setTimeout(() => setCopySuccess(false), 2000);
+                        }}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy Thumbnail Prompt
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
+                        onClick={rewriteStoryThumbnail}
+                        disabled={isGeneratingPrompts}
+                      >
+                        {isGeneratingPrompts ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Rewrite Prompt
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-black text-black flex items-center gap-2 ml-1">
@@ -911,6 +1198,79 @@ Twist: ${c.twist}
                     ))}
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {activeTab === "thumbnails" && currentThumbnailPrompt && (
+              <motion.div 
+                key="thumbnail-view"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="space-y-6"
+              >
+                <div className="p-8 rounded-3xl bg-slate-900 text-white shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <Sparkles className="w-32 h-32" />
+                  </div>
+                  <h2 className="text-sm uppercase tracking-[0.3em] text-indigo-400 font-black mb-4">Thumbnail Generation Prompt</h2>
+                  <p className="text-xl font-bold leading-relaxed text-slate-200">
+                    {currentThumbnailPrompt.output}
+                  </p>
+                  <div className="mt-6 flex gap-3">
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentThumbnailPrompt.output);
+                        setCopySuccess(true);
+                        setTimeout(() => setCopySuccess(false), 2000);
+                      }}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy Prompt
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
+                      onClick={() => rewriteThumbnailPrompt(currentThumbnailPrompt.output, currentThumbnailPrompt.input)}
+                      disabled={isGeneratingThumbnail}
+                    >
+                      {isGeneratingThumbnail ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      Rewrite Prompt
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
+                      onClick={() => {
+                        const blob = new Blob([currentThumbnailPrompt.output], { type: "text/plain" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `thumbnail-prompt-${Date.now()}.txt`;
+                        a.click();
+                      }}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download TXT
+                    </Button>
+                  </div>
+                </div>
+
+                <Card className="border-slate-200 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-black text-black">Original Idea</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-slate-600 font-medium italic">"{currentThumbnailPrompt.input}"</p>
+                  </CardContent>
+                </Card>
               </motion.div>
             )}
 
