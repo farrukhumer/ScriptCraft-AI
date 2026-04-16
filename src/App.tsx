@@ -25,8 +25,10 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import { GoogleGenAI, Type } from "@google/genai";
-import { ai, STORY_MODEL } from "@/src/lib/gemini";
 import * as React from "react"
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const STORY_MODEL = "gemini-2.0-flash";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -108,7 +110,7 @@ export default function App() {
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -156,7 +158,7 @@ export default function App() {
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -210,7 +212,7 @@ export default function App() {
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -336,7 +338,7 @@ Twist: ${c.twist}
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -448,7 +450,7 @@ Twist: ${c.twist}
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
       });
 
       const output = response.text || "";
@@ -494,7 +496,7 @@ Twist: ${c.twist}
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
       });
 
       const output = response.text || "";
@@ -541,7 +543,7 @@ Twist: ${c.twist}
 
       const response = await ai.models.generateContent({
         model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: prompt,
       });
 
       const output = (response.text || "").trim();

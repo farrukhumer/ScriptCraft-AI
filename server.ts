@@ -13,7 +13,6 @@ async function startServer() {
   app.get("/api/reddit", async (req, res) => {
     try {
       const { subreddit = "HOA", sort = "top", t = "week" } = req.query;
-      // Reddit JSON API
       const url = `https://www.reddit.com/r/${subreddit}/${sort}.json?t=${t}&limit=10`;
       
       const response = await axios.get(url, {
