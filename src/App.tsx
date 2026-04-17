@@ -27,7 +27,6 @@ import axios from "axios";
 import { GoogleGenAI, Type } from "@google/genai";
 import * as React from "react"
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 const STORY_MODEL = "gemini-2.0-flash";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,10 +55,50 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("input");
   const [copySuccess, setCopySuccess] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
+  const [isValidated, setIsValidated] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
+  const [showApiInput, setShowApiInput] = useState(false);
+
+  // Initialize AI with current key
+  const ai = React.useMemo(() => new GoogleGenAI({ apiKey: apiKey }), [apiKey]);
+
+  const verifyApiKey = async (key: string) => {
+    if (!key) {
+      setVerificationError("Please enter an API Key");
+      return;
+    }
+    setIsVerifying(true);
+    setVerificationError("");
+    try {
+      const tempAi = new GoogleGenAI({ apiKey: key });
+      await tempAi.models.generateContent({
+        model: STORY_MODEL,
+        contents: "hi",
+        config: { maxOutputTokens: 1 }
+      });
+      setApiKey(key);
+      localStorage.setItem("GEMINI_API_KEY", key);
+      setIsValidated(true);
+      setShowSplash(false);
+    } catch (error: any) {
+      console.error("API Key verification failed:", error);
+      setVerificationError("Invalid API Key. Please check and try again.");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setShowSplash(false);
+      // After 5 seconds, if we have a key in localStorage, try to verify it
+      // Otherwise, show the input field
+      if (apiKey) {
+        verifyApiKey(apiKey);
+      } else {
+        setShowApiInput(true);
+      }
     }, 5000);
     return () => clearTimeout(timer);
   }, []);
@@ -583,14 +622,60 @@ Twist: ${c.twist}
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
                   Powered by Mr-Furrukh
                 </p>
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: "100%" }}
-                  transition={{ duration: 3, delay: 1 }}
-                  className="h-1 bg-indigo-600 mx-auto rounded-full"
-                  style={{ maxWidth: "200px" }}
-                />
+                {!showApiInput && (
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 3, delay: 1 }}
+                    className="h-1 bg-indigo-600 mx-auto rounded-full"
+                    style={{ maxWidth: "200px" }}
+                  />
+                )}
               </div>
+
+              {showApiInput && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-md mx-auto space-y-4 pt-8 border-t border-white/10"
+                >
+                  <p className="text-white font-bold text-sm uppercase tracking-widest">Enter Gemini API Key to Start</p>
+                  <div className="relative group">
+                    <Input 
+                      type="password"
+                      placeholder="Paste your API key here..."
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="bg-white/5 border-white/20 text-white placeholder:text-slate-600 h-14 rounded-2xl focus:ring-indigo-500 focus:border-indigo-500 text-center tracking-widest"
+                    />
+                  </div>
+                  {verificationError && (
+                    <p className="text-red-400 text-xs font-bold uppercase tracking-widest">{verificationError}</p>
+                  )}
+                  <Button 
+                    className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                    onClick={() => verifyApiKey(apiKey)}
+                    disabled={isVerifying}
+                  >
+                    {isVerifying ? (
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                    ) : (
+                      <div className="flex items-center justify-center gap-2">
+                        <span>Initialize Engine</span>
+                        <ArrowRight className="w-5 h-5" />
+                      </div>
+                    )}
+                  </Button>
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] hover:text-indigo-400 transition-colors"
+                  >
+                    Get your key here →
+                  </a>
+                </motion.div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -657,6 +742,13 @@ Twist: ${c.twist}
               disabled={!urduStory}
             />
           </div>
+          <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => {
+            localStorage.removeItem("GEMINI_API_KEY");
+            window.location.reload();
+          }}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Change Key
+          </Button>
           <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => window.location.reload()}>
             <History className="w-4 h-4 mr-2" />
             Reset
