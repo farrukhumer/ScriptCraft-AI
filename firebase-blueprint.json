@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information and saved API keys.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "format": "url", "description": "User profile photo URL" },
+        "customGeminiKey": { "type": "string", "description": "Optional saved Gemini API Key" },
+        "customOpenRouterKey": { "type": "string", "description": "Optional saved OpenRouter API Key" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "Stores user profiles and their private settings."
+    }
+  }
+}

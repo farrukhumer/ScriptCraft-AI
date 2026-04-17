@@ -25,9 +25,14 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
 import * as React from "react"
+import { auth, loginWithGoogle, logout, syncUserProfile, UserProfile, db } from "./firebase";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { LogOut, Settings as SettingsIcon } from "lucide-react";
 
-const STORY_MODEL = "gemini-2.0-flash";
+const STORY_MODEL = "gemini-1.5-flash";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,55 +60,107 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("input");
   const [copySuccess, setCopySuccess] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  
+  const [apiKey, setApiKey] = useState(() => 
+    localStorage.getItem("GEMINI_API_KEY") || 
+    (import.meta.env.VITE_GEMINI_API_KEY as string) || 
+    ""
+  );
+  const [apiProvider, setApiProvider] = useState<"gemini" | "openrouter">(() => 
+    (localStorage.getItem("API_PROVIDER") as any) || "gemini"
+  );
+  
   const [isValidated, setIsValidated] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState("");
   const [showApiInput, setShowApiInput] = useState(false);
 
-  // Initialize AI with current key
-  const ai = React.useMemo(() => new GoogleGenAI({ apiKey: apiKey }), [apiKey]);
+  // Initialize AI instances
+  // We prioritize the user's saved key from their profile if it exists
+  const activeApiKey = profile?.customGeminiKey || apiKey || "";
+  
+  const ai = React.useMemo(() => new GoogleGenAI({ apiKey: activeApiKey }), [activeApiKey]);
+  const openRouter = React.useMemo(() => new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: profile?.customOpenRouterKey || activeApiKey,
+    dangerouslyAllowBrowser: true
+  }), [activeApiKey, profile]);
 
-  const verifyApiKey = async (key: string) => {
-    if (!key) {
-      setVerificationError("Please enter an API Key");
-      return;
-    }
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setIsAuthLoading(true);
+      if (currentUser) {
+        setUser(currentUser);
+        const userProfile = await syncUserProfile(currentUser);
+        setProfile(userProfile);
+        setIsValidated(true);
+        // If we have a user, we can bypass the splash after a delay
+        setTimeout(() => setShowSplash(false), 2000);
+      } else {
+        setUser(null);
+        setProfile(null);
+        setIsValidated(false);
+        setShowSplash(true);
+      }
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
     setIsVerifying(true);
-    setVerificationError("");
     try {
-      const tempAi = new GoogleGenAI({ apiKey: key });
-      await tempAi.models.generateContent({
-        model: STORY_MODEL,
-        contents: "hi",
-        config: { maxOutputTokens: 1 }
-      });
-      setApiKey(key);
-      localStorage.setItem("GEMINI_API_KEY", key);
-      setIsValidated(true);
-      setShowSplash(false);
-    } catch (error: any) {
-      console.error("API Key verification failed:", error);
-      setVerificationError("Invalid API Key. Please check and try again.");
+      await loginWithGoogle();
+    } catch (error) {
+      console.error("Login failed:", error);
+      setVerificationError("Google Login failed. Please try again.");
     } finally {
       setIsVerifying(false);
     }
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // After 5 seconds, if we have a key in localStorage, try to verify it
-      // Otherwise, show the input field
-      if (apiKey) {
-        verifyApiKey(apiKey);
-      } else {
-        setShowApiInput(true);
-      }
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, []);
+  const askAI = async (prompt: string, options: { 
+    isJson?: boolean, 
+    schema?: any 
+  } = {}) => {
+    // Check for API Key - either from user profile, local storage, or a global env variable
+    const key = activeApiKey;
+    
+    if (!key) {
+      throw new Error("No API Key found. Please add an API Key in settings.");
+    }
 
-  // Image Prompt Generator State
+    if (apiProvider === "gemini") {
+      const response = await ai.models.generateContent({
+        model: STORY_MODEL,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: options.isJson ? {
+          responseMimeType: "application/json",
+          responseSchema: options.schema
+        } : undefined
+      });
+      const text = response.text || "";
+      return options.isJson ? JSON.parse(text) : text;
+    } else {
+      const systemPrompt = options.isJson 
+        ? "You are a helpful assistant that ALWAYS outputs valid JSON."
+        : "You are a helpful assistant.";
+      
+      const response = await openRouter.chat.completions.create({
+        model: "qwen/qwen-2.5-72b-instruct", 
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt }
+        ],
+        response_format: options.isJson ? { type: "json_object" } : undefined
+      });
+      const text = response.choices[0].message.content || "";
+      return options.isJson ? JSON.parse(text) : text;
+    }
+  };
   const [promptInput, setPromptInput] = useState("");
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [promptHistory, setPromptHistory] = useState<PromptGeneration[]>([]);
@@ -147,23 +204,18 @@ export default function App() {
         Output must be in JSON format with a key "titles" which is an array of strings.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              titles: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["titles"]
-          }
+      const jsonResult = await askAI(prompt, {
+        isJson: true,
+        schema: {
+          type: Type.OBJECT,
+          properties: {
+            titles: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["titles"]
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
-      setTitles(result.titles);
+      setTitles(jsonResult.titles);
       setActiveTab("titles");
     } catch (error) {
       console.error("Title generation error:", error);
@@ -195,39 +247,34 @@ export default function App() {
         Output must be in JSON format.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              overallHook: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              chapters: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.NUMBER },
-                    title: { type: Type.STRING },
-                    content: { type: Type.STRING },
-                    twist: { type: Type.STRING }
-                  },
-                  required: ["id", "title", "content", "twist"]
-                }
+      const jsonResult = await askAI(prompt, {
+        isJson: true,
+        schema: {
+          type: Type.OBJECT,
+          properties: {
+            overallHook: { type: Type.STRING },
+            summary: { type: Type.STRING },
+            chapters: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.NUMBER },
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                  twist: { type: Type.STRING }
+                },
+                required: ["id", "title", "content", "twist"]
               }
-            },
-            required: ["overallHook", "summary", "chapters"]
-          }
+            }
+          },
+          required: ["overallHook", "summary", "chapters"]
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
       const fullStory: GeneratedStory = {
         titles: titles, // Keep original titles
-        ...result
+        ...jsonResult
       };
       setStory(fullStory);
       setActiveTab("output");
@@ -249,38 +296,33 @@ export default function App() {
       
       Output in JSON format with the same keys.`;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              titles: { type: Type.ARRAY, items: { type: Type.STRING } },
-              overallHook: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              chapters: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.NUMBER },
-                    title: { type: Type.STRING },
-                    content: { type: Type.STRING },
-                    twist: { type: Type.STRING }
-                  },
-                  required: ["id", "title", "content", "twist"]
-                }
+      const jsonResult = await askAI(prompt, {
+        isJson: true,
+        schema: {
+          type: Type.OBJECT,
+          properties: {
+            titles: { type: Type.ARRAY, items: { type: Type.STRING } },
+            overallHook: { type: Type.STRING },
+            summary: { type: Type.STRING },
+            chapters: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.NUMBER },
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                  twist: { type: Type.STRING }
+                },
+                required: ["id", "title", "content", "twist"]
               }
-            },
-            required: ["titles", "overallHook", "summary", "chapters"]
-          }
+            }
+          },
+          required: ["titles", "overallHook", "summary", "chapters"]
         }
-      });
+      }) as GeneratedStory;
 
-      const result = JSON.parse(response.text || "{}") as GeneratedStory;
-      setUrduStory(result);
+      setUrduStory(jsonResult);
     } catch (error) {
       console.error("Urdu translation error:", error);
     }
@@ -375,39 +417,34 @@ Twist: ${c.twist}
         Output must be in JSON format.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              mainCharacterDescription: { type: Type.STRING },
-              thumbnailPrompt: { type: Type.STRING },
-              prompts: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    sceneNumber: { type: Type.NUMBER },
-                    description: { type: Type.STRING }
-                  },
-                  required: ["sceneNumber", "description"]
-                }
+      const jsonResult = await askAI(prompt, {
+        isJson: true,
+        schema: {
+          type: Type.OBJECT,
+          properties: {
+            mainCharacterDescription: { type: Type.STRING },
+            thumbnailPrompt: { type: Type.STRING },
+            prompts: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  sceneNumber: { type: Type.NUMBER },
+                  description: { type: Type.STRING }
+                },
+                required: ["sceneNumber", "description"]
               }
-            },
-            required: ["mainCharacterDescription", "thumbnailPrompt", "prompts"]
-          }
+            }
+          },
+          required: ["mainCharacterDescription", "thumbnailPrompt", "prompts"]
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
       const newGeneration: PromptGeneration = {
         id: Date.now().toString(),
         timestamp: new Date().toLocaleTimeString(),
         storyTitle: text.slice(0, 50) + "...",
-        ...result
+        ...jsonResult
       };
 
       setCurrentPromptGeneration(newGeneration);
@@ -487,12 +524,7 @@ Twist: ${c.twist}
         Return ONLY the final, highly detailed image generation prompt. Do not add conversational text.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-      });
-
-      const output = response.text || "";
+      const output = await askAI(prompt);
       const newPrompt: ThumbnailPrompt = {
         id: Date.now().toString(),
         timestamp: new Date().toLocaleTimeString(),
@@ -533,12 +565,7 @@ Twist: ${c.twist}
         Return ONLY the new, improved, highly detailed image generation prompt.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-      });
-
-      const output = response.text || "";
+      const output = await askAI(prompt);
       const newPrompt: ThumbnailPrompt = {
         id: Date.now().toString(),
         timestamp: new Date().toLocaleTimeString(),
@@ -580,13 +607,8 @@ Twist: ${c.twist}
         Return ONLY the new, highly detailed image generation prompt.
       `;
 
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: prompt,
-      });
-
-      const output = (response.text || "").trim();
-      setCurrentPromptGeneration(prev => prev ? { ...prev, thumbnailPrompt: output } : null);
+      const output = await askAI(prompt);
+      setCurrentPromptGeneration(prev => prev ? { ...prev, thumbnailPrompt: output.trim() } : null);
     } catch (error) {
       console.error("Story thumbnail rewrite error:", error);
     } finally {
@@ -622,58 +644,62 @@ Twist: ${c.twist}
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
                   Powered by Mr-Furrukh
                 </p>
-                {!showApiInput && (
+                {isAuthLoading && (
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: "100%" }}
-                    transition={{ duration: 3, delay: 1 }}
+                    transition={{ duration: 3 }}
                     className="h-1 bg-indigo-600 mx-auto rounded-full"
                     style={{ maxWidth: "200px" }}
                   />
                 )}
               </div>
 
-              {showApiInput && (
+              {!user && !isAuthLoading && (
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-md mx-auto space-y-4 pt-8 border-t border-white/10"
+                  className="w-full max-w-md mx-auto space-y-6 pt-8 border-t border-white/10"
                 >
-                  <p className="text-white font-bold text-sm uppercase tracking-widest">Enter Gemini API Key to Start</p>
-                  <div className="relative group">
-                    <Input 
-                      type="password"
-                      placeholder="Paste your API key here..."
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      className="bg-white/5 border-white/20 text-white placeholder:text-slate-600 h-14 rounded-2xl focus:ring-indigo-500 focus:border-indigo-500 text-center tracking-widest"
-                    />
+                  <div className="space-y-2">
+                    <h2 className="text-white text-lg font-bold">Secure Access</h2>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      Experience the most powerful story engine ever built. <br/> Sign in to personalize your experience.
+                    </p>
                   </div>
-                  {verificationError && (
-                    <p className="text-red-400 text-xs font-bold uppercase tracking-widest">{verificationError}</p>
-                  )}
+
                   <Button 
-                    className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
-                    onClick={() => verifyApiKey(apiKey)}
+                    className="w-full h-16 bg-white hover:bg-slate-100 text-black font-black rounded-2xl shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 group"
+                    onClick={handleGoogleLogin}
                     disabled={isVerifying}
                   >
                     {isVerifying ? (
-                      <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                      <Loader2 className="w-6 h-6 animate-spin" />
                     ) : (
-                      <div className="flex items-center justify-center gap-2">
-                        <span>Initialize Engine</span>
-                        <ArrowRight className="w-5 h-5" />
-                      </div>
+                      <>
+                        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200 group-hover:bg-white transition-colors">
+                          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+                        </div>
+                        <span className="text-base">Sign in with Google</span>
+                        <ArrowRight className="w-5 h-5 ml-auto opacity-0 group-hover:opacity-100 transition-all -translate-x-4 group-hover:translate-x-0" />
+                      </>
                     )}
                   </Button>
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="block text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] hover:text-indigo-400 transition-colors"
-                  >
-                    Get your key here →
-                  </a>
+
+                  <div className="flex items-center justify-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest">
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    <span>No manual API keys required to start</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {user && !showSplash && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="pt-8 text-indigo-400 font-bold tracking-[0.2em] text-xs uppercase animate-pulse"
+                >
+                  Syncing Engine...
                 </motion.div>
               )}
             </motion.div>
@@ -732,8 +758,25 @@ Twist: ${c.twist}
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5 border border-slate-200">
+          <div className="flex items-center gap-4">
+            {user && (
+              <div className="flex items-center gap-3">
+                <div className="text-right hidden sm:block">
+                  <p className="text-xs font-bold text-black">{user.displayName}</p>
+                  <p className="text-[10px] text-slate-500 font-medium">{user.email}</p>
+                </div>
+                {user.photoURL && (
+                  <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
+                )}
+                <Button variant="ghost" size="icon" className="rounded-full hover:bg-red-50 hover:text-red-600 transition-colors" onClick={() => logout()}>
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+            
+            <Separator orientation="vertical" className="h-6" />
+            
+            <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5 border border-slate-200">
             <Languages className="w-4 h-4 text-slate-500" />
             <span className="text-xs font-bold text-slate-700">Urdu Mode</span>
             <Switch 
@@ -742,12 +785,9 @@ Twist: ${c.twist}
               disabled={!urduStory}
             />
           </div>
-          <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => {
-            localStorage.removeItem("GEMINI_API_KEY");
-            window.location.reload();
-          }}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Change Key
+          <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => setActiveTab("settings")}>
+            <SettingsIcon className="w-4 h-4 mr-2" />
+            Settings
           </Button>
           <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => window.location.reload()}>
             <History className="w-4 h-4 mr-2" />
@@ -777,7 +817,98 @@ Twist: ${c.twist}
                 <Sparkles className="w-3 h-3 mr-1" />
                 Thumbnails
               </TabsTrigger>
+              <TabsTrigger value="settings" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
+                <SettingsIcon className="w-3 h-3 mr-1" />
+                Vault
+              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="settings" className="mt-4">
+              <Card className="border-slate-200 shadow-sm overflow-hidden">
+                <div className="h-1 premium-gradient" />
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2 text-black">
+                    <SettingsIcon className="w-5 h-5 text-indigo-600" />
+                    Key Vault
+                  </CardTitle>
+                  <CardDescription className="text-slate-500 font-medium">Save your API keys to your profile permanently.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                      <p className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1 px-1">Active Provider</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button 
+                          variant={apiProvider === "gemini" ? "default" : "outline"} 
+                          size="sm" 
+                          className={cn("rounded-lg font-bold text-[10px] uppercase tracking-widest h-10", apiProvider === "gemini" && "bg-indigo-600")}
+                          onClick={() => {
+                            setApiProvider("gemini");
+                            localStorage.setItem("API_PROVIDER", "gemini");
+                          }}
+                        >
+                          Gemini
+                        </Button>
+                        <Button 
+                          variant={apiProvider === "openrouter" ? "default" : "outline"} 
+                          size="sm" 
+                          className={cn("rounded-lg font-bold text-[10px] uppercase tracking-widest h-10", apiProvider === "openrouter" && "bg-indigo-600")}
+                          onClick={() => {
+                            setApiProvider("openrouter");
+                            localStorage.setItem("API_PROVIDER", "openrouter");
+                          }}
+                        >
+                          OpenRouter
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Google Gemini Key</label>
+                        <div className="relative">
+                          <Input 
+                            type="password"
+                            placeholder="AIza..."
+                            value={profile?.customGeminiKey || apiKey}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setApiKey(val);
+                              localStorage.setItem("GEMINI_API_KEY", val);
+                              if (user) {
+                                setDoc(doc(db, 'users', user.uid), { customGeminiKey: val }, { merge: true });
+                              }
+                            }}
+                            className="bg-slate-50 border-slate-200 rounded-xl h-11 text-xs"
+                          />
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-medium px-1">Stored securely in your private cloud profile.</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">OpenRouter Key</label>
+                        <Input 
+                          type="password"
+                          placeholder="sk-or-v1-..."
+                          value={profile?.customOpenRouterKey || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (user) {
+                              setDoc(doc(db, 'users', user.uid), { customOpenRouterKey: val }, { merge: true });
+                            }
+                          }}
+                          className="bg-slate-50 border-slate-200 rounded-xl h-11 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 italic text-[10px] text-slate-400 text-center font-medium">
+                    "Your keys are only used for your own story generations and are never shared."
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
             <TabsContent value="input" className="mt-4">
               <Card className="border-slate-200 shadow-sm">
