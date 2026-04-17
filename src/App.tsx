@@ -21,16 +21,14 @@ import {
   FileText,
   Image as ImageIcon,
   Upload,
-  Clock
+  Clock,
+  LogOut
 } from "lucide-react";
 import axios from "axios";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 import * as React from "react"
-import { auth, loginWithGoogle, logout, syncUserProfile, UserProfile, db } from "./firebase";
-import { onAuthStateChanged, User } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
-import { LogOut, Settings as SettingsIcon } from "lucide-react";
+import { ShieldCheck, Lock, Unlock, Key, Settings as SettingsIcon } from "lucide-react";
 
 const STORY_MODEL = "gemini-1.5-flash";
 import { cn } from "@/lib/utils";
@@ -60,72 +58,41 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("input");
   const [copySuccess, setCopySuccess] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  
+  // Passcode System States
+  const [passcode, setPasscode] = useState("");
+  const [isUnlocked, setIsUnlocked] = useState(() => localStorage.getItem("APP_UNLOCKED") === "true");
+  const [unlockError, setUnlockError] = useState("");
+  
+  // The correct Passcode - you can change this anytime
+  const CORRECT_PASSCODE = "VIP786"; 
   
   const [apiKey, setApiKey] = useState(() => 
     localStorage.getItem("GEMINI_API_KEY") || 
-    (import.meta.env.VITE_GEMINI_API_KEY as string) || 
     ""
   );
+  
   const [apiProvider, setApiProvider] = useState<"gemini" | "openrouter">(() => 
     (localStorage.getItem("API_PROVIDER") as any) || "gemini"
   );
-  
-  const [isValidated, setIsValidated] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [verificationError, setVerificationError] = useState("");
-  const [showApiInput, setShowApiInput] = useState(false);
 
-  // Initialize AI instances
-  // We prioritize the user's saved key from their profile if it exists
-  const activeApiKey = profile?.customGeminiKey || apiKey || "";
+  const activeApiKey = apiKey;
   
   const ai = React.useMemo(() => new GoogleGenAI({ apiKey: activeApiKey }), [activeApiKey]);
   const openRouter = React.useMemo(() => new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
-    apiKey: profile?.customOpenRouterKey || activeApiKey,
+    apiKey: activeApiKey,
     dangerouslyAllowBrowser: true
-  }), [activeApiKey, profile]);
+  }), [activeApiKey]);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      try {
-        setIsAuthLoading(true);
-        if (currentUser) {
-          setUser(currentUser);
-          const userProfile = await syncUserProfile(currentUser);
-          setProfile(userProfile);
-          setIsValidated(true);
-          setTimeout(() => setShowSplash(false), 2000);
-        } else {
-          setUser(null);
-          setProfile(null);
-          setIsValidated(false);
-          setShowSplash(true);
-        }
-      } catch (error) {
-        console.error("Auth observer error:", error);
-      } finally {
-        setIsAuthLoading(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    console.log("handleGoogleLogin triggered");
-    setIsVerifying(true);
-    setVerificationError("");
-    try {
-      await loginWithGoogle();
-      console.log("Login successful");
-    } catch (error: any) {
-      console.error("Login failed:", error);
-      setVerificationError(`Login Error: ${error.message || "Unknown error"}`);
-    } finally {
-      setIsVerifying(false);
+  const handleUnlock = () => {
+    if (passcode.toUpperCase() === CORRECT_PASSCODE) {
+      setIsUnlocked(true);
+      localStorage.setItem("APP_UNLOCKED", "true");
+      setUnlockError("");
+      setTimeout(() => setShowSplash(false), 500);
+    } else {
+      setUnlockError("Ghalat Code! Dobara koshish karen.");
     }
   };
 
@@ -133,11 +100,8 @@ export default function App() {
     isJson?: boolean, 
     schema?: any 
   } = {}) => {
-    // Check for API Key - either from user profile, local storage, or a global env variable
-    const key = activeApiKey;
-    
-    if (!key) {
-      throw new Error("No API Key found. Please add an API Key in settings.");
+    if (!activeApiKey) {
+      throw new Error("API Engine not ready. Please add a Master Key in environment variables.");
     }
 
     if (apiProvider === "gemini") {
@@ -651,88 +615,80 @@ Twist: ${c.twist}
                 <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
                   Powered by Mr-Furrukh
                 </p>
-                {isAuthLoading && (
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: "100%" }}
-                    transition={{ duration: 3 }}
-                    className="h-1 bg-indigo-600 mx-auto rounded-full"
-                    style={{ maxWidth: "200px" }}
-                  />
-                )}
+                {/* Authentication process removed in favor of Passcode */}
               </div>
 
-              {!user && !isAuthLoading && (
+              {!isUnlocked && (
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-md mx-auto space-y-6 pt-8 border-t border-white/10"
+                  className="w-full max-w-sm mx-auto space-y-6 pt-12 border-t border-white/10"
                 >
                   <div className="space-y-2">
-                    <h2 className="text-white text-lg font-bold">Secure Access</h2>
-                    <p className="text-slate-400 text-xs leading-relaxed">
-                      Experience the most powerful story engine ever built. <br/> Sign in to personalize your experience.
+                    <h2 className="text-white text-xl font-bold tracking-tight">Unlock Premium Engine</h2>
+                    <p className="text-slate-400 text-xs font-medium">
+                      Baraye meherbani apna secret passcode darj karen.
                     </p>
                   </div>
 
-                  <Button 
-                    className="w-full h-16 bg-white hover:bg-slate-100 text-black font-black rounded-2xl shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 group"
-                    onClick={handleGoogleLogin}
-                    disabled={isVerifying}
-                  >
-                    {isVerifying ? (
-                      <div className="flex items-center gap-3">
-                        <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-                        <span className="text-slate-500 text-sm">Waiting for Google...</span>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200 group-hover:bg-white transition-colors">
-                          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-                        </div>
-                        <span className="text-base">Sign in with Google</span>
-                        <ArrowRight className="w-5 h-5 ml-auto opacity-0 group-hover:opacity-100 transition-all -translate-x-4 group-hover:translate-x-0" />
-                      </>
-                    )}
-                  </Button>
-
-                  {verificationError && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-4 rounded-xl bg-red-50 border border-red-100 text-center"
-                    >
-                      <p className="text-red-600 text-xs font-bold leading-relaxed">
-                        {verificationError}
-                        <br/>
-                        <span className="text-[10px] opacity-70 font-medium">Please check if popups are blocked in your browser.</span>
-                      </p>
-                    </motion.div>
-                  )}
-
-                  <div className="flex flex-col items-center justify-center gap-4 p-4 text-slate-500 font-bold text-[10px] uppercase tracking-widest">
-                    <div className="flex items-center gap-2">
-                      <Check className="w-3 h-3 text-emerald-500" />
-                      <span>No manual API keys required to start</span>
+                  <div className="space-y-4">
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                      <Input 
+                        type="password"
+                        placeholder="ENTER PASSCODE"
+                        value={passcode}
+                        onChange={(e) => setPasscode(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
+                        className="bg-white/5 border-white/20 text-white placeholder:text-slate-600 h-14 rounded-2xl focus:ring-2 focus:ring-indigo-500 text-center font-black tracking-[0.5em] pl-10"
+                      />
                     </div>
-                    
-                    <button 
-                      onClick={() => setShowSplash(false)}
-                      className="hover:text-indigo-400 transition-colors underline decoration-dotted underline-offset-4"
+
+                    {unlockError && (
+                      <motion.p 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-red-400 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 p-2 rounded-lg border border-red-500/20"
+                      >
+                        {unlockError}
+                      </motion.p>
+                    )}
+
+                    <Button 
+                      className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-2xl shadow-indigo-600/30 transition-all active:scale-95 group"
+                      onClick={handleUnlock}
                     >
-                      Bypass to Guest Mode
-                    </button>
+                      <span className="flex items-center gap-2">
+                        UNLEASH AI
+                        <Unlock className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                      </span>
+                    </Button>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-center gap-4 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Encrypted</span>
+                    </div>
+                    <div className="w-1 h-1 bg-slate-700 rounded-full" />
+                    <div className="flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Instant Access</span>
+                    </div>
                   </div>
                 </motion.div>
               )}
 
-              {user && !showSplash && (
+              {isUnlocked && showSplash && (
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="pt-8 text-indigo-400 font-bold tracking-[0.2em] text-xs uppercase animate-pulse"
+                  className="pt-12 flex flex-col items-center gap-3"
                 >
-                  Syncing Engine...
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                  <p className="text-indigo-400 font-bold tracking-[0.2em] text-xs uppercase animate-pulse">
+                    Connecting to Master Engine...
+                  </p>
                 </motion.div>
               )}
             </motion.div>
@@ -792,41 +748,27 @@ Twist: ${c.twist}
         </div>
 
           <div className="flex items-center gap-4">
-            {user && (
-              <div className="flex items-center gap-3">
-                <div className="text-right hidden sm:block">
-                  <p className="text-xs font-bold text-black">{user.displayName}</p>
-                  <p className="text-[10px] text-slate-500 font-medium">{user.email}</p>
-                </div>
-                {user.photoURL && (
-                  <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
-                )}
-                <Button variant="ghost" size="icon" className="rounded-full hover:bg-red-50 hover:text-red-600 transition-colors" onClick={() => logout()}>
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-            
-            <Separator orientation="vertical" className="h-6" />
-            
             <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5 border border-slate-200">
-            <Languages className="w-4 h-4 text-slate-500" />
-            <span className="text-xs font-bold text-slate-700">Urdu Mode</span>
-            <Switch 
-              checked={showUrdu} 
-              onCheckedChange={setShowUrdu}
-              disabled={!urduStory}
-            />
+              <Languages className="w-4 h-4 text-slate-500" />
+              <span className="text-xs font-bold text-slate-700">Urdu Mode</span>
+              <Switch 
+                checked={showUrdu} 
+                onCheckedChange={setShowUrdu}
+                disabled={!urduStory}
+              />
+            </div>
+            <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold h-9" onClick={() => setActiveTab("settings")}>
+              <SettingsIcon className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold h-9" onClick={() => {
+              localStorage.removeItem("APP_UNLOCKED");
+              window.location.reload();
+            }}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Lock
+            </Button>
           </div>
-          <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => setActiveTab("settings")}>
-            <SettingsIcon className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
-          <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold" onClick={() => window.location.reload()}>
-            <History className="w-4 h-4 mr-2" />
-            Reset
-          </Button>
-        </div>
       </header>
 
       <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -861,15 +803,15 @@ Twist: ${c.twist}
                 <div className="h-1 premium-gradient" />
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2 text-black">
-                    <SettingsIcon className="w-5 h-5 text-indigo-600" />
-                    Key Vault
+                    <Key className="w-5 h-5 text-indigo-600" />
+                    Engine Configuration
                   </CardTitle>
-                  <CardDescription className="text-slate-500 font-medium">Save your API keys to your profile permanently.</CardDescription>
+                  <CardDescription className="text-slate-500 font-medium">Configure your personal AI preferences.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-4">
                     <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
-                      <p className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1 px-1">Active Provider</p>
+                      <p className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1 px-1">Active AI Provider</p>
                       <div className="grid grid-cols-2 gap-2">
                         <Button 
                           variant={apiProvider === "gemini" ? "default" : "outline"} 
@@ -898,46 +840,43 @@ Twist: ${c.twist}
 
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Google Gemini Key</label>
+                        <div className="flex items-center justify-between px-1">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Master/Personal Key</label>
+                          <Badge variant="outline" className="text-[8px] h-4 bg-emerald-50 text-emerald-600 border-emerald-100 uppercase font-black">Live</Badge>
+                        </div>
                         <div className="relative">
                           <Input 
                             type="password"
-                            placeholder="AIza..."
-                            value={profile?.customGeminiKey || apiKey}
+                            placeholder="AIza... (Leave blank to use Master Key)"
+                            value={apiKey}
                             onChange={(e) => {
                               const val = e.target.value;
                               setApiKey(val);
                               localStorage.setItem("GEMINI_API_KEY", val);
-                              if (user) {
-                                setDoc(doc(db, 'users', user.uid), { customGeminiKey: val }, { merge: true });
-                              }
                             }}
                             className="bg-slate-50 border-slate-200 rounded-xl h-11 text-xs"
                           />
                         </div>
-                        <p className="text-[9px] text-slate-400 font-medium px-1">Stored securely in your private cloud profile.</p>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">OpenRouter Key</label>
-                        <Input 
-                          type="password"
-                          placeholder="sk-or-v1-..."
-                          value={profile?.customOpenRouterKey || ""}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (user) {
-                              setDoc(doc(db, 'users', user.uid), { customOpenRouterKey: val }, { merge: true });
-                            }
-                          }}
-                          className="bg-slate-50 border-slate-200 rounded-xl h-11 text-xs"
-                        />
+                        <p className="text-[9px] text-slate-400 font-medium px-1 italic">
+                          Agar aap apni key use karna chahte hain toh yahan darj karen. Warna Master Key auto-use hogi.
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 italic text-[10px] text-slate-400 text-center font-medium">
-                    "Your keys are only used for your own story generations and are never shared."
+                  <div className="pt-4 border-t border-slate-100 flex flex-col items-center gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 text-[10px] font-black uppercase tracking-widest"
+                      onClick={() => {
+                        localStorage.removeItem("APP_UNLOCKED");
+                        window.location.reload();
+                      }}
+                    >
+                      <Lock className="w-3 h-3 mr-2" />
+                      Lock Application
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
