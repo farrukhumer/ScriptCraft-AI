@@ -91,32 +91,39 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setIsAuthLoading(true);
-      if (currentUser) {
-        setUser(currentUser);
-        const userProfile = await syncUserProfile(currentUser);
-        setProfile(userProfile);
-        setIsValidated(true);
-        // If we have a user, we can bypass the splash after a delay
-        setTimeout(() => setShowSplash(false), 2000);
-      } else {
-        setUser(null);
-        setProfile(null);
-        setIsValidated(false);
-        setShowSplash(true);
+      try {
+        setIsAuthLoading(true);
+        if (currentUser) {
+          setUser(currentUser);
+          const userProfile = await syncUserProfile(currentUser);
+          setProfile(userProfile);
+          setIsValidated(true);
+          setTimeout(() => setShowSplash(false), 2000);
+        } else {
+          setUser(null);
+          setProfile(null);
+          setIsValidated(false);
+          setShowSplash(true);
+        }
+      } catch (error) {
+        console.error("Auth observer error:", error);
+      } finally {
+        setIsAuthLoading(false);
       }
-      setIsAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
   const handleGoogleLogin = async () => {
+    console.log("handleGoogleLogin triggered");
     setIsVerifying(true);
+    setVerificationError("");
     try {
       await loginWithGoogle();
-    } catch (error) {
+      console.log("Login successful");
+    } catch (error: any) {
       console.error("Login failed:", error);
-      setVerificationError("Google Login failed. Please try again.");
+      setVerificationError(`Login Error: ${error.message || "Unknown error"}`);
     } finally {
       setIsVerifying(false);
     }
@@ -674,7 +681,10 @@ Twist: ${c.twist}
                     disabled={isVerifying}
                   >
                     {isVerifying ? (
-                      <Loader2 className="w-6 h-6 animate-spin" />
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                        <span className="text-slate-500 text-sm">Waiting for Google...</span>
+                      </div>
                     ) : (
                       <>
                         <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center border border-slate-200 group-hover:bg-white transition-colors">
@@ -686,9 +696,32 @@ Twist: ${c.twist}
                     )}
                   </Button>
 
-                  <div className="flex items-center justify-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest">
-                    <Check className="w-3 h-3 text-emerald-500" />
-                    <span>No manual API keys required to start</span>
+                  {verificationError && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-4 rounded-xl bg-red-50 border border-red-100 text-center"
+                    >
+                      <p className="text-red-600 text-xs font-bold leading-relaxed">
+                        {verificationError}
+                        <br/>
+                        <span className="text-[10px] opacity-70 font-medium">Please check if popups are blocked in your browser.</span>
+                      </p>
+                    </motion.div>
+                  )}
+
+                  <div className="flex flex-col items-center justify-center gap-4 p-4 text-slate-500 font-bold text-[10px] uppercase tracking-widest">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-3 h-3 text-emerald-500" />
+                      <span>No manual API keys required to start</span>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setShowSplash(false)}
+                      className="hover:text-indigo-400 transition-colors underline decoration-dotted underline-offset-4"
+                    >
+                      Bypass to Guest Mode
+                    </button>
                   </div>
                 </motion.div>
               )}
