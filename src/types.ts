@@ -22,9 +22,15 @@ export interface GeneratedStory {
   chapters: StoryChapter[];
 }
 
-export interface ImagePrompt {
+export interface DetailedScenePrompt {
   sceneNumber: number;
-  description: string;
+  imagePrompt: string;
+  visualPrompt: string;
+}
+
+export interface StoryHook {
+  id: number;
+  videoHookPrompt: string;
 }
 
 export interface PromptGeneration {
@@ -32,8 +38,8 @@ export interface PromptGeneration {
   timestamp: string;
   storyTitle: string;
   mainCharacterDescription: string;
-  thumbnailPrompt?: string;
-  prompts: ImagePrompt[];
+  hooks: StoryHook[];
+  scenes: DetailedScenePrompt[];
 }
 
 export interface ThumbnailPrompt {

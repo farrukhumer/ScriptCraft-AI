@@ -22,15 +22,16 @@ import {
   Image as ImageIcon,
   Upload,
   Clock,
-  LogOut
+  LogOut,
+  Key,
+  Lock
 } from "lucide-react";
 import axios from "axios";
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 import * as React from "react"
-import { ShieldCheck, Lock, Unlock, Key, Settings as SettingsIcon } from "lucide-react";
 
-const STORY_MODEL = "gemini-1.5-flash";
+const STORY_MODEL = "gemini-3-flash-preview";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -41,12 +42,10 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { RedditPost, GeneratedStory, StoryChapter, PromptGeneration, ImagePrompt, ThumbnailPrompt } from "@/src/types";
+import { RedditPost, GeneratedStory, StoryChapter, PromptGeneration, DetailedScenePrompt, ThumbnailPrompt } from "@/src/types";
 
 export default function App() {
   const [inputText, setInputText] = useState("");
-  const [redditPosts, setRedditPosts] = useState<RedditPost[]>([]);
-  const [isFetching, setIsFetching] = useState(false);
   const [isGeneratingTitles, setIsGeneratingTitles] = useState(false);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
   const [titles, setTitles] = useState<string[]>([]);
@@ -57,80 +56,34 @@ export default function App() {
   const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("input");
   const [copySuccess, setCopySuccess] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
   
-  // Passcode System States
-  const [passcode, setPasscode] = useState("");
-  const [isUnlocked, setIsUnlocked] = useState(() => localStorage.getItem("APP_UNLOCKED") === "true");
-  const [unlockError, setUnlockError] = useState("");
-  
-  // The correct Passcode - you can change this anytime
-  const CORRECT_PASSCODE = "VIP786"; 
-  
-  const [apiKey, setApiKey] = useState(() => 
-    localStorage.getItem("GEMINI_API_KEY") || 
-    ""
-  );
-  
-  const [apiProvider, setApiProvider] = useState<"gemini" | "openrouter">(() => 
-    (localStorage.getItem("API_PROVIDER") as any) || "gemini"
-  );
+  // States for Settings (added back for manual edit compatibility)
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("GEMINI_API_KEY") || "");
+  const [apiProvider, setApiProvider] = useState<"gemini" | "openrouter">(() => (localStorage.getItem("API_PROVIDER") as any) || "gemini");
 
-  const activeApiKey = apiKey;
+  // Use the API Key provided by the AI Studio environment
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
   
-  const ai = React.useMemo(() => new GoogleGenAI({ apiKey: activeApiKey }), [activeApiKey]);
-  const openRouter = React.useMemo(() => new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: activeApiKey,
-    dangerouslyAllowBrowser: true
-  }), [activeApiKey]);
-
-  const handleUnlock = () => {
-    if (passcode.toUpperCase() === CORRECT_PASSCODE) {
-      setIsUnlocked(true);
-      localStorage.setItem("APP_UNLOCKED", "true");
-      setUnlockError("");
-      setTimeout(() => setShowSplash(false), 500);
-    } else {
-      setUnlockError("Ghalat Code! Dobara koshish karen.");
-    }
-  };
-
+  const ai = React.useMemo(() => new GoogleGenAI({ apiKey: GEMINI_API_KEY }), [GEMINI_API_KEY]);
+  
   const askAI = async (prompt: string, options: { 
     isJson?: boolean, 
     schema?: any 
   } = {}) => {
-    if (!activeApiKey) {
-      throw new Error("API Engine not ready. Please add a Master Key in environment variables.");
+    if (!GEMINI_API_KEY) {
+      throw new Error("Gemini API Key missing in environment.");
     }
 
-    if (apiProvider === "gemini") {
-      const response = await ai.models.generateContent({
-        model: STORY_MODEL,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: options.isJson ? {
-          responseMimeType: "application/json",
-          responseSchema: options.schema
-        } : undefined
-      });
-      const text = response.text || "";
-      return options.isJson ? JSON.parse(text) : text;
-    } else {
-      const systemPrompt = options.isJson 
-        ? "You are a helpful assistant that ALWAYS outputs valid JSON."
-        : "You are a helpful assistant.";
-      
-      const response = await openRouter.chat.completions.create({
-        model: "qwen/qwen-2.5-72b-instruct", 
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        response_format: options.isJson ? { type: "json_object" } : undefined
-      });
-      const text = response.choices[0].message.content || "";
-      return options.isJson ? JSON.parse(text) : text;
-    }
+    const response = await ai.models.generateContent({
+      model: STORY_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: options.isJson ? {
+        responseMimeType: "application/json",
+        responseSchema: options.schema
+      } : undefined
+    });
+    const text = response.text || "";
+    return options.isJson ? JSON.parse(text) : text;
   };
   const [promptInput, setPromptInput] = useState("");
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
@@ -143,19 +96,6 @@ export default function App() {
   const [thumbnailHistory, setThumbnailHistory] = useState<ThumbnailPrompt[]>([]);
   const [currentThumbnailPrompt, setCurrentThumbnailPrompt] = useState<ThumbnailPrompt | null>(null);
 
-  // Fetch Reddit Posts
-  const fetchReddit = async (subreddit: string = "HOA") => {
-    setIsFetching(true);
-    try {
-      const response = await axios.get(`/api/reddit?subreddit=${subreddit}`);
-      setRedditPosts(response.data);
-    } catch (error) {
-      console.error("Error fetching Reddit posts:", error);
-    } finally {
-      setIsFetching(false);
-    }
-  };
-
   // Step 1: Generate Titles
   const generateTitles = async (text: string) => {
     if (!text) return;
@@ -167,8 +107,15 @@ export default function App() {
     
     try {
       const prompt = `
-        You are a viral content strategist. Based on the following content, generate 10 high-quality, long, and descriptive titles that are perfect for a story script.
-        One title must have a shocking twist mentioned in it.
+        You are a viral content strategist. Based on the following content, generate 10 high-quality, mid-length, and "hookable" titles in English.
+        They should be descriptive yet punchy (intriguing but not too long).
+        
+        Example style: "My neighbor fined me $100 for no reason, but when I showed the officer my footage, things took a turn."
+        
+        Requirements:
+        - Must be in Professional English.
+        - Must be intriguing and click-baity.
+        - Must summarize the core drama with a hint of the resolution/twist.
         
         Content: "${text}"
         
@@ -202,18 +149,20 @@ export default function App() {
     
     try {
       const prompt = `
-        You are a premium story script writer. Write a high-quality story script based on this specific title and the original context.
+        You are a premium story script writer. Write a high-quality story script in Professional English based on this specific title and the original context.
         
         Selected Title: "${title}"
         Original Context: "${inputText}"
         
         Requirements:
-        1. A strong overall hook (first 10 seconds) that keeps the listener captivated and forced to listen till the end.
+        1. An explosive, high-suspense hook (first 10 seconds) that starts with intense dialogue or a mysterious situation in English.
         2. A short summary in English.
-        3. 8 to 10 Chapters with a detailed, natural narrative flow:
-           - Chapter 1: The setup with a powerful hook.
-           - Chapters 2-9: Progressive development. Include new events like court hearings (peshi), secret neighbor meetings, or unexpected new attacks from the antagonist to make the script feel long and natural.
-           - Final Chapter: The final resolution with a massive, viral-worthy twist.
+        3. 8 to 10 Chapters with a detailed narrative and HEAVY FOCUS ON DIALOGUES:
+           - Chapter 1: The setup with a powerful hook and suspenseful dialogue.
+           - Chapters 2-9: Progressive development in English. Include interactions, arguments, and specific dialogues between characters to make it cinematic.
+           - Final Chapter: The final resolution with a massive, viral-worthy twist and a concluding hook dialogue.
+        
+        CRITICAL: All output except for the structure must be in clear, Professional English. Avoid any other languages.
         
         Output must be in JSON format.
       `;
@@ -252,6 +201,11 @@ export default function App() {
       
       // Auto-generate Urdu version
       translateToUrdu(fullStory);
+
+      // Auto-generate Visual Pack & Thumbnails
+      const storyText = `Title: ${title}\n\nSummary: ${fullStory.summary}\n\nChapters:\n${fullStory.chapters.map(c => c.content).join("\n\n")}`;
+      generateImagePrompts(storyText);
+      generateThumbnailPrompt(storyText);
     } catch (error) {
       console.error("Story generation error:", error);
     } finally {
@@ -364,26 +318,30 @@ Twist: ${c.twist}
     
     try {
       const prompt = `
-        You are an expert AI image prompt engineer. Based on the story provided, generate a concise description of the main character, a viral thumbnail prompt, and 50 scene-by-scene image prompts.
+        You are an expert AI story and visual prompt engineer. Based on the story provided, generate a detailed pack for creators.
         
         Story Content: "${text}"
         
-        CRITICAL REQUIREMENTS:
-        1. "mainCharacterDescription": Create a CONCISE physical description of the main character (e.g., 'Mark, 35yo man in glasses and gray blazer').
-        2. "thumbnailPrompt": As a Professional YouTube Thumbnail Concept Artist specializing in HOA and Suburban Drama, read the provided story and generate a single, high-impact Image Generation Prompt.
-           - Read & Analyze: Scan the story for the most 'Shocking' and 'Dramatic' point (e.g. HOA Confrontation, Property Destruction, or Illegal Act).
-           - Scene Selection: Imagine a 'Clickbait' scene with 2-3 full-body human characters. ALL characters in the scene must have extreme, dramatic facial expressions (shock, anger, or evil smirks) relevant to the story. CRITICAL: Expressions must be REALISTIC HUMAN expressions. AVOID any unnatural distortions, pure white eyes, or horror-like facial features. Characters should look like real people in a high-stakes drama, not supernatural entities.
-           - Camera & Composition: Use a WIDE-ANGLE shot. The camera must be far enough to show the FULL BODY of the characters and the surrounding suburban environment. DO NOT zoom in too close.
-           - Visual Style: Photorealistic cinematic style with a hint of high-end 3D render polish (balanced for realism). Avoid looking like a cartoon or pure 3D model.
-           - Environment: Vibrant deep blue sky, lush high-contrast greenery (grass and trees), and saturated sharp colors for the entire suburban setting to match the character contrast.
-           - Lighting: STRICTLY DAYTIME. Use "Bright, even midday sunlight" or "High-intensity diffused daylight". AVOID deep, harsh shadows or dark silhouettes on the ground or faces. The lighting should be clear and even across the whole scene.
-           - Quality Tags: Include: '8k, ultra-detailed, photorealistic, sharp focus, wide-angle lens, HDR, intense cinematic atmosphere, sharp textures, high-quality skin render'.
-           - Strict Rule: NO text, subtitles, or letters. Focus ONLY on visual storytelling.
-           - CRITICAL: SINGLE SCENE ONLY. NO SPLIT-SCREEN.
-        3. "prompts": Generate exactly 50 scene-by-scene prompts.
-        4. CHARACTER CONSISTENCY & PRESENCE: For every scene where the main character is present, start the prompt with the concise description created in step 1. 
-           CRITICAL RULE: If the character is NOT present in a specific scene, DO NOT include their name or physical description at all. Only describe the environment, the action, the camera angle, and the lighting.
-        5. CINEMATIC FOCUS: Focus 60% of each prompt on the cinematic camera angle (e.g., low angle, close-up, wide shot), detailed environment, lighting (e.g., moody, neon, harsh shadows), and the suspenseful/eerie mood of the scene.
+        OUTPUT STRUCTURE:
+        1. "mainCharacterDescription": A detailed physical description of the main character (e.g., 'A 40-year-old middle-class man with tired eyes, wearing a simple button-down shirt and brown trousers').
+        
+        2. "hooks": 6 high-impact, suspenseful video hooks. 
+           - Extract 6 different dramatic moments from various parts of the story to create suspense.
+           - Each hook MUST have:
+             - "id": number
+             - "videoHookPrompt": A highly detailed, all-in-one prompt for AI video generators (like Luma, Runway, Pika). 
+               - Include: Camera movement (e.g., fast zoom, panning), lighting (e.g., flickering lights, harsh sun), character action, and specific dialogue in quotes.
+               - Describe the visual flow and the climax of that specific moment.
+               - IMPORTANT: Include the character's physical description in every hook.
+        
+        3. "scenes": A scene-by-scene breakdown of the story (at least 20-30 scenes).
+           Each scene must have:
+           - "imagePrompt": A photorealistic cinematic description (Camera angle, lighting, character action, environment).
+           - "visualPrompt": A description for image-to-video tools. Focus on the MOTION, what is moving, the flow of the scene, and visual effects.
+        
+        CRITICAL RULES:
+        - Consistency: Always start prompts with the character's description if they are present.
+        - Drama: All prompts must reflect the suspense and tone of the story.
         
         Output must be in JSON format.
       `;
@@ -394,20 +352,31 @@ Twist: ${c.twist}
           type: Type.OBJECT,
           properties: {
             mainCharacterDescription: { type: Type.STRING },
-            thumbnailPrompt: { type: Type.STRING },
-            prompts: {
+            hooks: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.NUMBER },
+                  videoHookPrompt: { type: Type.STRING }
+                },
+                required: ["id", "videoHookPrompt"]
+              }
+            },
+            scenes: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
                   sceneNumber: { type: Type.NUMBER },
-                  description: { type: Type.STRING }
+                  imagePrompt: { type: Type.STRING },
+                  visualPrompt: { type: Type.STRING }
                 },
-                required: ["sceneNumber", "description"]
+                required: ["sceneNumber", "imagePrompt", "visualPrompt"]
               }
             }
           },
-          required: ["mainCharacterDescription", "thumbnailPrompt", "prompts"]
+          required: ["mainCharacterDescription", "hooks", "scenes"]
         }
       });
 
@@ -454,17 +423,15 @@ Twist: ${c.twist}
   const handleDownloadPrompts = () => {
     if (!currentPromptGeneration) return;
     
-    let text = "";
-    if (currentPromptGeneration.thumbnailPrompt) {
-      text += `THUMBNAIL PROMPT:\n${currentPromptGeneration.thumbnailPrompt}\n\n---\n\n`;
-    }
-    text += currentPromptGeneration.prompts.map(p => p.description).join("\n\n");
+    let text = `MAIN CHARACTER:\n${currentPromptGeneration.mainCharacterDescription}\n\n`;
+    text += `HOOKS:\n` + currentPromptGeneration.hooks.map(h => `Hook ${h.id}:\n${h.videoHookPrompt}`).join("\n\n") + `\n\n`;
+    text += `SCENES:\n` + currentPromptGeneration.scenes.map(s => `Scene ${s.sceneNumber}:\n[IMAGE]: ${s.imagePrompt}\n[VISUAL]: ${s.visualPrompt}`).join("\n\n");
     
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `prompts-${Date.now()}.txt`;
+    a.download = `detailed-prompts-${Date.now()}.txt`;
     a.click();
   };
 
@@ -591,110 +558,7 @@ Twist: ${c.twist}
 
   return (
     <div className="min-h-screen font-sans bg-white text-black selection:bg-indigo-100">
-      <AnimatePresence>
-        {showSplash && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center text-center p-6"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 1, ease: "easeOut" }}
-              className="space-y-6"
-            >
-              <div className="w-24 h-24 mx-auto rounded-3xl premium-gradient flex items-center justify-center shadow-2xl shadow-indigo-500/20 mb-8">
-                <Zap className="text-white w-12 h-12 fill-white" />
-              </div>
-              <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter">
-                Welcome To The <span className="text-indigo-500">Premium Story Engine</span>
-              </h1>
-              <div className="space-y-2">
-                <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.3em]">
-                  Powered by Mr-Furrukh
-                </p>
-                {/* Authentication process removed in favor of Passcode */}
-              </div>
-
-              {!isUnlocked && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-sm mx-auto space-y-6 pt-12 border-t border-white/10"
-                >
-                  <div className="space-y-2">
-                    <h2 className="text-white text-xl font-bold tracking-tight">Unlock Premium Engine</h2>
-                    <p className="text-slate-400 text-xs font-medium">
-                      Baraye meherbani apna secret passcode darj karen.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="relative group">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                      <Input 
-                        type="password"
-                        placeholder="ENTER PASSCODE"
-                        value={passcode}
-                        onChange={(e) => setPasscode(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
-                        className="bg-white/5 border-white/20 text-white placeholder:text-slate-600 h-14 rounded-2xl focus:ring-2 focus:ring-indigo-500 text-center font-black tracking-[0.5em] pl-10"
-                      />
-                    </div>
-
-                    {unlockError && (
-                      <motion.p 
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="text-red-400 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 p-2 rounded-lg border border-red-500/20"
-                      >
-                        {unlockError}
-                      </motion.p>
-                    )}
-
-                    <Button 
-                      className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl shadow-2xl shadow-indigo-600/30 transition-all active:scale-95 group"
-                      onClick={handleUnlock}
-                    >
-                      <span className="flex items-center gap-2">
-                        UNLEASH AI
-                        <Unlock className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                      </span>
-                    </Button>
-                  </div>
-
-                  <div className="pt-4 flex items-center justify-center gap-4 text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-                    <div className="flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Encrypted</span>
-                    </div>
-                    <div className="w-1 h-1 bg-slate-700 rounded-full" />
-                    <div className="flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Instant Access</span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {isUnlocked && showSplash && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="pt-12 flex flex-col items-center gap-3"
-                >
-                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-                  <p className="text-indigo-400 font-bold tracking-[0.2em] text-xs uppercase animate-pulse">
-                    Connecting to Master Engine...
-                  </p>
-                </motion.div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* No splash screen needed for personal use */}
 
       {/* Background Decor */}
       <div className="fixed inset-0 -z-10 overflow-hidden opacity-30">
@@ -743,7 +607,7 @@ Twist: ${c.twist}
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-black">Premium Story Engine</h1>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black">Free For Life Time use</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black">Personal AI Production Studio</p>
           </div>
         </div>
 
@@ -757,17 +621,6 @@ Twist: ${c.twist}
                 disabled={!urduStory}
               />
             </div>
-            <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold h-9" onClick={() => setActiveTab("settings")}>
-              <SettingsIcon className="w-4 h-4 mr-2" />
-              Settings
-            </Button>
-            <Button variant="outline" size="sm" className="rounded-full border-slate-200 hover:bg-slate-50 text-black font-bold h-9" onClick={() => {
-              localStorage.removeItem("APP_UNLOCKED");
-              window.location.reload();
-            }}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Lock
-            </Button>
           </div>
       </header>
 
@@ -780,10 +633,6 @@ Twist: ${c.twist}
                 <Edit3 className="w-3 h-3 mr-1" />
                 Input
               </TabsTrigger>
-              <TabsTrigger value="reddit" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
-                <Search className="w-3 h-3 mr-1" />
-                Reddit
-              </TabsTrigger>
               <TabsTrigger value="prompts" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
                 <ImageIcon className="w-3 h-3 mr-1" />
                 Prompts
@@ -793,10 +642,12 @@ Twist: ${c.twist}
                 Thumbnails
               </TabsTrigger>
               <TabsTrigger value="settings" className="rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm font-bold text-[10px]">
-                <SettingsIcon className="w-3 h-3 mr-1" />
+                <Key className="w-3 h-3 mr-1" />
                 Vault
               </TabsTrigger>
             </TabsList>
+
+            {/* Settings Tab Removed for Personal Use */}
 
             <TabsContent value="settings" className="mt-4">
               <Card className="border-slate-200 shadow-sm overflow-hidden">
@@ -906,67 +757,6 @@ Twist: ${c.twist}
                     <Sparkles className="w-5 h-5 mr-2" />
                     Generate Titles
                   </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="reddit" className="mt-4">
-              <Card className="border-slate-200 shadow-sm">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg text-black">Trending</CardTitle>
-                    <CardDescription className="text-slate-500 font-medium">Top posts from r/HOA.</CardDescription>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => fetchReddit()} disabled={isFetching} className="text-slate-500 hover:text-black">
-                    <RefreshCw className={cn("w-5 h-5", isFetching && "animate-spin")} />
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[450px] pr-4">
-                    {isFetching ? (
-                      <div className="space-y-4">
-                        {[1, 2, 3].map(i => (
-                          <div key={i} className="p-4 rounded-xl bg-slate-50 border border-slate-100 animate-pulse">
-                            <div className="h-4 w-3/4 bg-slate-200 rounded mb-2" />
-                            <div className="h-3 w-1/2 bg-slate-100 rounded" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : redditPosts.length > 0 ? (
-                      <div className="space-y-4">
-                        {redditPosts.map(post => (
-                          <motion.div 
-                            key={post.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all cursor-pointer group"
-                            onClick={() => {
-                              setInputText(post.text || post.title);
-                              setActiveTab("input");
-                            }}
-                          >
-                            <h3 className="text-sm font-bold text-black line-clamp-2 group-hover:text-indigo-600 transition-colors mb-2">
-                              {post.title}
-                            </h3>
-                            <p className="text-xs text-slate-600 line-clamp-2 mb-3 font-medium">
-                              {post.text || "No description available."}
-                            </p>
-                            <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-bold">
-                              <span>u/{post.author}</span>
-                              <Badge variant="secondary" className="bg-white text-indigo-600 border-slate-200">
-                                {post.upvotes} UP
-                              </Badge>
-                            </div>
-                          </motion.div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-20 text-slate-400">
-                        <Search className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                        <p className="font-bold">No posts found.</p>
-                      </div>
-                    )}
-                  </ScrollArea>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1329,11 +1119,12 @@ Twist: ${c.twist}
                 animate={{ opacity: 1, x: 0 }}
                 className="space-y-6"
               >
+                {/* Character Block */}
                 <div className="p-8 rounded-3xl bg-slate-900 text-white shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-10">
-                    <ImageIcon className="w-32 h-32" />
+                    <BookOpen className="w-32 h-32" />
                   </div>
-                  <h2 className="text-sm uppercase tracking-[0.3em] text-indigo-400 font-black mb-4">Main Character Prompt</h2>
+                  <h2 className="text-sm uppercase tracking-[0.3em] text-amber-400 font-black mb-4">Master Character Detail</h2>
                   <p className="text-xl font-bold leading-relaxed text-slate-200">
                     {currentPromptGeneration.mainCharacterDescription}
                   </p>
@@ -1348,56 +1139,43 @@ Twist: ${c.twist}
                     }}
                   >
                     <Copy className="w-4 h-4 mr-2" />
-                    Copy Character Description
+                    Copy Detail
                   </Button>
                 </div>
 
-                {currentPromptGeneration.thumbnailPrompt && (
-                  <div className="p-8 rounded-3xl bg-indigo-900 text-white shadow-2xl relative overflow-hidden border border-indigo-500/30">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Sparkles className="w-32 h-32" />
-                    </div>
-                    <h2 className="text-sm uppercase tracking-[0.3em] text-indigo-300 font-black mb-4">Viral Thumbnail Prompt</h2>
-                    <p className="text-xl font-bold leading-relaxed text-indigo-50">
-                      {currentPromptGeneration.thumbnailPrompt}
-                    </p>
-                    <div className="mt-6 flex gap-3">
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
-                        onClick={() => {
-                          navigator.clipboard.writeText(currentPromptGeneration.thumbnailPrompt!);
-                          setCopySuccess(true);
-                          setTimeout(() => setCopySuccess(false), 2000);
-                        }}
-                      >
-                        <Copy className="w-4 h-4 mr-2" />
-                        Copy Thumbnail Prompt
-                      </Button>
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="bg-white/10 hover:bg-white/20 border-none text-white font-bold"
-                        onClick={rewriteStoryThumbnail}
-                        disabled={isGeneratingPrompts}
-                      >
-                        {isGeneratingPrompts ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Rewrite Prompt
-                      </Button>
-                    </div>
+                {/* Hooks Block (Video Hooks) */}
+                <div className="space-y-4">
+                  <h3 className="text-xl font-black text-black flex items-center gap-2 ml-1">
+                    <Zap className="w-6 h-6 text-amber-500" />
+                    Viral Video Hooks (6)
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    {currentPromptGeneration.hooks.map((hook) => (
+                      <Card key={hook.id} className="border-amber-200 bg-amber-50/20 shadow-sm overflow-hidden">
+                        <CardHeader className="pb-2 bg-amber-50/50 border-b border-amber-100 flex flex-row items-center justify-between">
+                          <CardTitle className="text-[10px] font-black uppercase text-amber-600">Hook Scene {hook.id}</CardTitle>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                            navigator.clipboard.writeText(hook.videoHookPrompt);
+                            setCopySuccess(true);
+                            setTimeout(() => setCopySuccess(false), 2000);
+                          }}><Copy className="w-3 h-3 text-amber-600" /></Button>
+                        </CardHeader>
+                        <CardContent className="p-4">
+                          <p className="text-xs font-bold text-slate-700 leading-relaxed bg-white/60 p-3 rounded-lg border border-amber-100 italic">
+                            {hook.videoHookPrompt}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                )}
+                </div>
 
+                {/* Scenes Block */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-black text-black flex items-center gap-2 ml-1">
                       <Sparkles className="w-6 h-6 text-indigo-600" />
-                      50 Scene Prompts
+                      Scene-by-Scene Visuals
                     </h3>
                     <div className="flex gap-2">
                       <Button 
@@ -1405,7 +1183,8 @@ Twist: ${c.twist}
                         size="sm" 
                         className="border-slate-200 text-black font-bold"
                         onClick={() => {
-                          const text = currentPromptGeneration.prompts.map(p => `Scene ${p.sceneNumber}: ${p.description}`).join("\n\n");
+                          const text = `HOOKS:\n` + currentPromptGeneration.hooks.map(h => `Hook ${h.id}:\n${h.videoHookPrompt}`).join("\n\n") + `\n\n` + 
+                            `SCENES:\n` + currentPromptGeneration.scenes.map(s => `Scene ${s.sceneNumber}:\n[IMAGE]: ${s.imagePrompt}\n[VISUAL]: ${s.visualPrompt}`).join("\n\n");
                           navigator.clipboard.writeText(text);
                           setCopySuccess(true);
                           setTimeout(() => setCopySuccess(false), 2000);
@@ -1425,16 +1204,37 @@ Twist: ${c.twist}
                       </Button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-4">
-                    {currentPromptGeneration.prompts.map((p) => (
-                      <Card key={p.sceneNumber} className="border-slate-200 shadow-sm hover:border-indigo-200 transition-colors">
-                        <CardContent className="p-6 flex gap-4">
-                          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-black text-slate-400 shrink-0">
-                            {p.sceneNumber}
+                  <div className="grid grid-cols-1 gap-6">
+                    {currentPromptGeneration.scenes.map((s) => (
+                      <Card key={s.sceneNumber} className="border-slate-200 shadow-sm hover:border-indigo-200 transition-colors overflow-hidden">
+                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scene {s.sceneNumber}</span>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                              navigator.clipboard.writeText(s.imagePrompt);
+                              setCopySuccess(true);
+                              setTimeout(() => setCopySuccess(false), 2000);
+                            }}><ImageIcon className="w-3 h-3 text-slate-400" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                              navigator.clipboard.writeText(s.visualPrompt);
+                              setCopySuccess(true);
+                              setTimeout(() => setCopySuccess(false), 2000);
+                            }}><Zap className="w-3 h-3 text-slate-400" /></Button>
                           </div>
-                          <p className="text-sm text-slate-800 leading-relaxed font-medium">
-                            {p.description}
-                          </p>
+                        </div>
+                        <CardContent className="p-4 space-y-4">
+                          <div>
+                            <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">Image Prompt (Midjourney/DALL-E)</p>
+                            <p className="text-xs text-slate-800 leading-relaxed font-medium bg-slate-50/50 p-2 rounded-lg border border-slate-100">
+                              {s.imagePrompt}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1">Visual Prompt (Image-to-Video)</p>
+                            <p className="text-xs text-slate-700 leading-relaxed font-medium bg-amber-50/30 p-2 rounded-lg border border-amber-100 italic">
+                              {s.visualPrompt}
+                            </p>
+                          </div>
                         </CardContent>
                       </Card>
                     ))}
